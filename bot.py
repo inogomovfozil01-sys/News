@@ -16,19 +16,11 @@ dp.include_router(router)
 
 db = sqlite3.connect("users.db", check_same_thread=False)
 cursor = db.cursor()
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
-    first_name TEXT
-)
-""")
+cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT)")
 db.commit()
 
 def add_user(user_id: int, first_name: str):
-    cursor.execute(
-        "INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)",
-        (user_id, first_name)
-    )
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)", (user_id, first_name))
     db.commit()
 
 def get_users():
@@ -65,10 +57,7 @@ async def start(message: types.Message):
 async def chat_command(message: types.Message):
     add_user(message.from_user.id, message.from_user.first_name)
     file_path = "photo_2025-12-13_16-31-07.jpg"
-    text = (
-        "Привет! Вы выбрали команду /chat!\n\n"
-        "Ниже кнопка для перехода в чат с администрацией проекта."
-    )
+    text = "Привет! Вы выбрали команду /chat!\nНиже есть кнопка для перехода в чат с администрацией проекта."
     chat_button = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Перейти в чат 🌐", url="https://t.me/VolnaBot_bot")]]
     )
@@ -106,6 +95,9 @@ async def send_now(callback: types.CallbackQuery):
 @router.callback_query(lambda c: c.data == "delay")
 async def delay(callback: types.CallbackQuery):
     global waiting_for_delay
+    if callback.from_user.id not in ADMIN_IDS or not saved_message:
+        await callback.answer("Нет доступа", show_alert=True)
+        return
     waiting_for_delay = True
     await callback.message.answer("⏱ Введите задержку в минутах")
     await callback.answer()
@@ -113,7 +105,7 @@ async def delay(callback: types.CallbackQuery):
 @router.message()
 async def get_delay(message: types.Message):
     global waiting_for_delay
-    if not waiting_for_delay:
+    if not waiting_for_delay or message.from_user.id not in ADMIN_IDS:
         return
     if not message.text.isdigit():
         await message.answer("Введите число")
@@ -136,28 +128,16 @@ async def send_to_all(callback=None):
     failed = 0
     for user_id, first_name in users:
         try:
-            greeting = f"👋 Привет, {first_name}!\n\n"
+            greeting = f"👋 Привет, {first_name}! Вот тебе последние новости нашего проекта!\n\n"
             ct = saved_message.content_type
             if ct == ContentType.TEXT:
                 await bot.send_message(user_id, greeting + saved_message.text)
             elif ct == ContentType.PHOTO:
-                await bot.send_photo(
-                    user_id,
-                    saved_message.photo[-1].file_id,
-                    caption=greeting + (saved_message.caption or "")
-                )
+                await bot.send_photo(user_id, saved_message.photo[-1].file_id, caption=greeting + (saved_message.caption or ""))
             elif ct == ContentType.VIDEO:
-                await bot.send_video(
-                    user_id,
-                    saved_message.video.file_id,
-                    caption=greeting + (saved_message.caption or "")
-                )
+                await bot.send_video(user_id, saved_message.video.file_id, caption=greeting + (saved_message.caption or ""))
             elif ct == ContentType.DOCUMENT:
-                await bot.send_document(
-                    user_id,
-                    saved_message.document.file_id,
-                    caption=greeting + (saved_message.caption or "")
-                )
+                await bot.send_document(user_id, saved_message.document.file_id, caption=greeting + (saved_message.caption or ""))
             sent += 1
         except:
             failed += 1
@@ -169,6 +149,9 @@ async def send_to_all(callback=None):
 @router.callback_query(lambda c: c.data == "cancel")
 async def cancel(callback: types.CallbackQuery):
     global saved_message, waiting_for_delay
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("Нет доступа", show_alert=True)
+        return
     saved_message = None
     waiting_for_delay = False
     await callback.message.answer("❌ Рассылка отменена", reply_markup=admin_keyboard)
