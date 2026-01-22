@@ -1,22 +1,34 @@
-import asyncio 
+import asyncio
+import os
 import sqlite3
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, Router, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.enums import ContentType
 
-TOKEN = "8541200501:AAHe1vhgIKG8IWoh9uqYJv6xaN315WmQg28"
+TOKEN = "8541200501:AAEI_0KYbZu3wV8WKWGQ7rUKJlQJP2IvYLI"
 ADMIN_IDS = [6690476979]
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+router = Router()
+dp.include_router(router)
 
-db = sqlite3.connect("users.db")
+db = sqlite3.connect("users.db", check_same_thread=False)
 cursor = db.cursor()
-cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT)")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    first_name TEXT
+)
+""")
 db.commit()
 
 def add_user(user_id: int, first_name: str):
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)", (user_id, first_name))
+    cursor.execute(
+        "INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)",
+        (user_id, first_name)
+    )
     db.commit()
 
 def get_users():
@@ -41,7 +53,7 @@ confirm_keyboard = InlineKeyboardMarkup(
     ]
 )
 
-@dp.message(Command("start"))
+@router.message(Command("start"))
 async def start(message: types.Message):
     add_user(message.from_user.id, message.from_user.first_name)
     if message.from_user.id in ADMIN_IDS:
@@ -49,55 +61,59 @@ async def start(message: types.Message):
     else:
         await message.answer("Вы успешно подписались ✅")
 
-@dp.message(Command("chat"))
+@router.message(Command("chat"))
 async def chat_command(message: types.Message):
     add_user(message.from_user.id, message.from_user.first_name)
     file_path = "photo_2025-12-13_16-31-07.jpg"
-    text = "Привет! Вы выбрали команду /chat!\nНиже есть кнопка которая поможет вам перейти в чат с администрацией, нашего проекта!\n\n ✅Нажмите и напишите свой вопрос и вам помогут!"
+    text = (
+        "Привет! Вы выбрали команду /chat!\n\n"
+        "Ниже кнопка для перехода в чат с администрацией проекта."
+    )
     chat_button = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Перейти в чат 🌐", url="https://t.me/VolnaBot_bot")]]
     )
     file = FSInputFile(file_path)
-    await bot.send_photo(chat_id=message.chat.id, photo=file, caption=text, reply_markup=chat_button)
+    await bot.send_photo(message.chat.id, file, caption=text, reply_markup=chat_button)
 
-@dp.callback_query(lambda c: c.data == "publish")
+@router.callback_query(lambda c: c.data == "publish")
 async def publish(callback: types.CallbackQuery):
     global waiting_for_post
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("Нет доступа", show_alert=True)
         return
     waiting_for_post = True
-    await callback.message.answer("✍️ Отправьте сообщение для рассылки\nПоддержка текста, фото, видео, аудио, документов.\nЛокальные файлы: ./путь/к/файлу")
+    await callback.message.answer("✍️ Отправьте сообщение для рассылки")
     await callback.answer()
 
-@dp.message()
+@router.message()
 async def catch_message(message: types.Message):
     global waiting_for_post, saved_message
     if message.from_user.id not in ADMIN_IDS or not waiting_for_post:
         return
     waiting_for_post = False
     saved_message = message
-    await bot.copy_message(chat_id=message.from_user.id, from_chat_id=message.chat.id, message_id=message.message_id)
+    await bot.copy_message(
+        chat_id=message.from_user.id,
+        from_chat_id=message.chat.id,
+        message_id=message.message_id
+    )
     await message.answer("👆 Предпросмотр\nВыберите действие:", reply_markup=confirm_keyboard)
 
-@dp.callback_query(lambda c: c.data == "send_now")
+@router.callback_query(lambda c: c.data == "send_now")
 async def send_now(callback: types.CallbackQuery):
     await send_to_all(callback)
 
-@dp.callback_query(lambda c: c.data == "delay")
+@router.callback_query(lambda c: c.data == "delay")
 async def delay(callback: types.CallbackQuery):
     global waiting_for_delay
-    if callback.from_user.id not in ADMIN_IDS or not saved_message:
-        await callback.answer("Нет доступа", show_alert=True)
-        return
     waiting_for_delay = True
     await callback.message.answer("⏱ Введите задержку в минутах")
     await callback.answer()
 
-@dp.message()
+@router.message()
 async def get_delay(message: types.Message):
     global waiting_for_delay
-    if not waiting_for_delay or message.from_user.id not in ADMIN_IDS:
+    if not waiting_for_delay:
         return
     if not message.text.isdigit():
         await message.answer("Введите число")
@@ -120,37 +136,39 @@ async def send_to_all(callback=None):
     failed = 0
     for user_id, first_name in users:
         try:
-            greeting = f"👋 Привет, {first_name}! Вот тебе последние новости нашего проекта!\n\n"
-            if saved_message.content_type == "text":
-                text = greeting + saved_message.text
-                await bot.send_message(user_id, text)
-            elif saved_message.content_type == "photo":
-                caption = greeting + (saved_message.caption or "")
-                await bot.send_photo(user_id, saved_message.photo[-1].file_id, caption=caption)
-            elif saved_message.content_type == "video":
-                caption = greeting + (saved_message.caption or "")
-                await bot.send_video(user_id, saved_message.video.file_id, caption=caption)
-            elif saved_message.content_type == "document":
-                caption = greeting + (saved_message.caption or "")
-                await bot.send_document(user_id, saved_message.document.file_id, caption=caption)
+            greeting = f"👋 Привет, {first_name}!\n\n"
+            ct = saved_message.content_type
+            if ct == ContentType.TEXT:
+                await bot.send_message(user_id, greeting + saved_message.text)
+            elif ct == ContentType.PHOTO:
+                await bot.send_photo(
+                    user_id,
+                    saved_message.photo[-1].file_id,
+                    caption=greeting + (saved_message.caption or "")
+                )
+            elif ct == ContentType.VIDEO:
+                await bot.send_video(
+                    user_id,
+                    saved_message.video.file_id,
+                    caption=greeting + (saved_message.caption or "")
+                )
+            elif ct == ContentType.DOCUMENT:
+                await bot.send_document(
+                    user_id,
+                    saved_message.document.file_id,
+                    caption=greeting + (saved_message.caption or "")
+                )
             sent += 1
         except:
             failed += 1
     saved_message = None
     summary = f"✅ Рассылка завершена\nОтправлено: {sent}\nОшибок: {failed}"
-    if callback:
-        await callback.message.answer(summary, reply_markup=admin_keyboard)
-        await callback.answer()
-    else:
-        for admin_id in ADMIN_IDS:
-            await bot.send_message(admin_id, summary, reply_markup=admin_keyboard)
+    for admin_id in ADMIN_IDS:
+        await bot.send_message(admin_id, summary, reply_markup=admin_keyboard)
 
-@dp.callback_query(lambda c: c.data == "cancel")
+@router.callback_query(lambda c: c.data == "cancel")
 async def cancel(callback: types.CallbackQuery):
     global saved_message, waiting_for_delay
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("Нет доступа", show_alert=True)
-        return
     saved_message = None
     waiting_for_delay = False
     await callback.message.answer("❌ Рассылка отменена", reply_markup=admin_keyboard)
@@ -161,4 +179,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
