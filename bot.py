@@ -128,7 +128,7 @@ async def send_to_all(callback=None):
     failed = 0
     for user_id, first_name in users:
         try:
-            greeting = f"👋 Привет, {first_name}!\n Тебе поступило новые новости проекта, советую прочитать новости ниже:
+            greeting = f"👋 Привет, {first_name}!  Тебе поступило новые новости проекта, советую прочитать новости ниже:
             \n\n"
             ct = saved_message.content_type
             if ct == ContentType.TEXT:
@@ -163,4 +163,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
