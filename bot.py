@@ -1,6 +1,7 @@
 import asyncio
 import sqlite3
 from datetime import datetime
+import pytz
 from aiogram import Bot, Dispatcher, Router, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
@@ -8,6 +9,8 @@ from aiogram.enums import ContentType
 
 TOKEN = "8541200501:AAEI_0KYbZu3wV8WKWGQ7rUKJlQJP2IvYLI"
 ADMIN_IDS = [6690476979]
+
+tz = pytz.timezone("Europe/Moscow")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -99,7 +102,7 @@ async def delay(callback: types.CallbackQuery):
         await callback.answer("Нет доступа", show_alert=True)
         return
     waiting_for_datetime = True
-    await callback.message.answer("Введите дату и время в формате:\n22.01.2026 13:00")
+    await callback.message.answer("Введите дату и время по МСК:\n22.01.2026 13:00")
     await callback.answer()
 
 @router.message()
@@ -108,15 +111,19 @@ async def get_datetime(message: types.Message):
     if not waiting_for_datetime or message.from_user.id not in ADMIN_IDS:
         return
     try:
-        target_time = datetime.strptime(message.text, "%d.%m.%Y %H:%M")
-        now = datetime.now()
+        naive_dt = datetime.strptime(message.text, "%d.%m.%Y %H:%M")
+        target_time = tz.localize(naive_dt)
+        now = datetime.now(tz)
+
         delay_seconds = (target_time - now).total_seconds()
         if delay_seconds <= 0:
-            await message.answer("Время уже прошло. Введите будущее время.")
+            await message.answer("Время уже прошло. Введите будущее время по МСК.")
             return
+
         waiting_for_datetime = False
-        await message.answer(f"⏳ Рассылка запланирована на {message.text}")
+        await message.answer(f"⏳ Рассылка запланирована на {message.text} по МСК")
         asyncio.create_task(delayed_send(delay_seconds))
+
     except:
         await message.answer("Неверный формат. Пример: 22.01.2026 13:00")
 
@@ -139,32 +146,40 @@ async def send_to_all():
                 f"👋 Привет, {first_name}!\n"
                 f"Тебе поступили новые новости проекта, советую прочитать ниже:\n\n"
             )
+
             ct = saved_message.content_type
+
             if ct == ContentType.TEXT:
                 await bot.send_message(user_id, greeting + saved_message.text)
+
             elif ct == ContentType.PHOTO:
                 await bot.send_photo(
                     user_id,
                     saved_message.photo[-1].file_id,
                     caption=greeting + (saved_message.caption or "")
                 )
+
             elif ct == ContentType.VIDEO:
                 await bot.send_video(
                     user_id,
                     saved_message.video.file_id,
                     caption=greeting + (saved_message.caption or "")
                 )
+
             elif ct == ContentType.DOCUMENT:
                 await bot.send_document(
                     user_id,
                     saved_message.document.file_id,
                     caption=greeting + (saved_message.caption or "")
                 )
+
             sent += 1
+
         except:
             failed += 1
 
     saved_message = None
+
     summary = f"✅ Рассылка завершена\nОтправлено: {sent}\nОшибок: {failed}"
     for admin_id in ADMIN_IDS:
         await bot.send_message(admin_id, summary, reply_markup=admin_keyboard)
