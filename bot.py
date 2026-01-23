@@ -41,6 +41,7 @@ def get_users():
 waiting_for_post = False
 waiting_for_datetime = False
 saved_message: types.Message | None = None
+post_sent = False
 
 admin_keyboard = InlineKeyboardMarkup(
     inline_keyboard=[
@@ -68,10 +69,12 @@ async def start(message: types.Message):
 
 @router.callback_query(lambda c: c.data == "publish")
 async def publish(callback: types.CallbackQuery):
-    global waiting_for_post
+    global waiting_for_post, saved_message, post_sent
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("Нет доступа", show_alert=True)
         return
+    saved_message = None
+    post_sent = False
     waiting_for_post = True
     await callback.message.answer("✍️ Отправь сообщение для рассылки")
     await callback.answer()
@@ -111,12 +114,18 @@ async def admin_flow(message: types.Message):
 
 @router.callback_query(lambda c: c.data == "send_now")
 async def send_now(callback: types.CallbackQuery):
+    if post_sent:
+        await callback.answer("❗ Этот пост уже отправлен", show_alert=True)
+        return
     await send_to_all()
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "delay")
 async def delay(callback: types.CallbackQuery):
     global waiting_for_datetime
+    if post_sent:
+        await callback.answer("❗ Этот пост уже отправлен", show_alert=True)
+        return
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("Нет доступа", show_alert=True)
         return
@@ -127,6 +136,9 @@ async def delay(callback: types.CallbackQuery):
 @router.callback_query(lambda c: c.data == "cancel")
 async def cancel(callback: types.CallbackQuery):
     global saved_message, waiting_for_datetime, waiting_for_post
+    if post_sent:
+        await callback.answer("❗ Этот пост уже отправлен", show_alert=True)
+        return
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("Нет доступа", show_alert=True)
         return
@@ -141,8 +153,8 @@ async def delayed_send(seconds: float):
     await send_to_all()
 
 async def send_to_all():
-    global saved_message
-    if not saved_message:
+    global saved_message, post_sent
+    if not saved_message or post_sent:
         return
 
     users = get_users()
@@ -162,7 +174,7 @@ async def send_to_all():
         except:
             failed += 1
 
-    saved_message = None
+    post_sent = True
 
     summary = f"Отправлено: {sent}\nОшибок: {failed}"
     for admin_id in ADMIN_IDS:
@@ -173,4 +185,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
