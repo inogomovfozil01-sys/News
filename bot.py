@@ -67,6 +67,18 @@ async def start(message: types.Message):
     else:
         await message.answer("Вы подписались на новости проекта ✅")
 
+@dp.message(Command("chat"))
+async def chat_command(message: types.Message):
+    add_user(message.from_user.id, message.from_user.first_name)
+    file_path = "./images/photo_2025-12-13_16-31-07.jpg"
+    text = "Привет! Вы выбрали команду /chat!\nНиже есть кнопка которая поможет вам перейти в чат с администрацией, нашего проекта!\n\n ✅Нажмите и напишите свой вопрос и вам помогут!"
+    chat_button = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Перейти в чат 🌐", url="https://t.me/VolnaBot_bot")]]
+    )
+    file = FSInputFile(file_path)
+    await bot.send_photo(chat_id=message.chat.id, photo=file, caption=text, reply_markup=chat_button)
+
+
 @router.callback_query(lambda c: c.data == "publish")
 async def publish(callback: types.CallbackQuery):
     global waiting_for_post, saved_message, post_sent
@@ -185,3 +197,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
